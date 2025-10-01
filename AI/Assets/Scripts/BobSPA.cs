@@ -19,6 +19,10 @@ public class BobSPA : MonoBehaviour
 
     private Dictionary<string, float> actionScores;
 
+    public GameObject enemyInst;
+
+    private static BobSPA leaderEnemy;
+
     private void Start()
     {
         actionScores = new Dictionary<string, float>()
@@ -34,26 +38,74 @@ public class BobSPA : MonoBehaviour
     private void Update()
     {
         // SENSE
-        if (isChasingBack)
+        distanceToPlayer = Vector3.Distance(transform.position, player.position);
+
+        // Reset detection each frame
+        LOS = false;
+        enemyInst = null;
+
+        // Detection radius
+        float detectionRadius = 10f;
+
+        // Find everything in range
+        Collider[] detected = Physics.OverlapSphere(transform.position, detectionRadius);
+
+        foreach (var col in detected)
         {
-            player = player.Find("PlayerFront");
-            isChasingBack = false;
-        }
-        else
-        {
-            player = player.Find("PlayerBack");
-            isChasingBack = true;
-        }
-            distanceToPlayer = Vector3.Distance(transform.position, player.position);
-        Ray ray = new Ray(transform.position + (Vector3.up * 0.8f), player.position - transform.position);
-        if(Physics.Raycast(ray, out RaycastHit hit))
-        {
-            LOS = hit.collider.gameObject.TryGetComponent<PlayerMovement>(out PlayerMovement _);
+            // Detect player
+            if (col.TryGetComponent<PlayerMovement>(out PlayerMovement _))
+            {
+                Vector3 dirToPlayer = (col.transform.position - transform.position).normalized;
+                Vector3 origin = transform.position + Vector3.up * 0.8f;
+
+                // Check LOS with a raycast
+                if (Physics.Raycast(origin, dirToPlayer, out RaycastHit hit, detectionRadius))
+                {
+                    if (hit.collider.gameObject == col.gameObject)
+                    {
+                        // Clear LOS to player
+                        LOS = true;
+                        distanceToPlayer = Vector3.Distance(transform.position, col.transform.position);
+                        Debug.DrawRay(origin, dirToPlayer * detectionRadius, Color.green);
+                    }
+                    else if (hit.collider.TryGetComponent<BobSPA>(out BobSPA _))
+                    {
+                        // LOS is hitting another enemy first
+                        enemyInst = hit.collider.gameObject;
+                        Debug.DrawRay(origin, dirToPlayer * detectionRadius, Color.blue);
+                    }
+                    else
+                    {
+                        // Blocked by something else
+                        Debug.DrawRay(origin, dirToPlayer * detectionRadius, Color.red);
+                    }
+                }
+            }
+
+            // Detect other enemies (proximity only, not necessarily LOS)
+            else if (col.TryGetComponent<BobSPA>(out BobSPA _))
+            {
+                if (col.gameObject != gameObject)
+                {
+                    enemyInst = col.gameObject;
+                }
+            }
         }
 
         if (Vector3.Distance(patrolPoints[patrolIndex].position, transform.position) < distanceCheck)
         {
             patrolIndex = (patrolIndex + 1) % patrolPoints.Length;
+        }
+
+        // SELECT LEADER
+        if (LOS)
+        {
+            if (leaderEnemy == null) // No leader yet
+                leaderEnemy = this;
+
+            // If current leader lost LOS, allow reassignment
+            if (leaderEnemy != null && leaderEnemy != this && !leaderEnemy.LOS)
+                leaderEnemy = this;
         }
 
         // PLAN
@@ -70,7 +122,8 @@ public class BobSPA : MonoBehaviour
                 break;
 
             case "Chase":
-                Chase();
+                if (leaderEnemy == this) Ambush();
+                else Chase();
                 break;
 
             case "Patrol":
@@ -80,6 +133,8 @@ public class BobSPA : MonoBehaviour
             default:
                 break;
         }
+
+
     }
 
     private void Flee()
@@ -94,8 +149,22 @@ public class BobSPA : MonoBehaviour
         agent.SetDestination(player.position);
     }
 
+    private void Ambush()
+    {
+        Vector3 ambushPoint = (player.position + player.forward * 5f) + (player.position + player.right * 1.5f);
+        agent.SetDestination(ambushPoint);
+    }
+
     private void Patrol()
     {
         agent.SetDestination(patrolPoints[patrolIndex].position);
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        float detectionRadius = 10f;
+
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, detectionRadius);
     }
 }

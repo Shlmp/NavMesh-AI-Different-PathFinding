@@ -18,7 +18,12 @@ public class PlayerMovement : MonoBehaviour
     private void Update()
     {
         Vector2 input = actions.Gameplay.Move.ReadValue<Vector2>();
+        Vector3 move = new Vector3(input.x, 0, input.y);
 
-        controller.Move(new Vector3(input.x, 0, input.y) * Time.deltaTime * speed);
+        controller.Move(move * Time.deltaTime * speed);
+        if (move.sqrMagnitude > 0.001f)
+        {
+            transform.forward = move.normalized;
+        }
     }
 }
